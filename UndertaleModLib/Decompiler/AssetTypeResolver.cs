@@ -53,7 +53,12 @@ namespace UndertaleModLib.Decompiler
         ContextDependent, // Can be anything, depends on the function and/or other arguments
 
         TileSet, // Identical to AssetIDType.Background, used internally for GMS2 to prevent tileset functions from resolving incorrectly.
-        Layer // GMS2
+        Layer, // GMS2
+
+        PT_State, // Pizza Tower states
+
+        Keep, // Not really a type, makes function arguments use the outer function's type (e.g for choose())
+        Repeat // Also a not-type, repeats the function's argument types
     }
 
     public enum HAlign
@@ -362,6 +367,9 @@ namespace UndertaleModLib.Decompiler
 
         public static Dictionary<string, AssetIDType> return_types; // keys are script names (< GMS2.3) or member function variable names (>= GMS2.3)
 
+        public static bool PTSpriteTypes = false; // enable types for spr_* variables and stuff
+        public static Dictionary<int, string> PTStates = new();
+
         internal static bool AnnotateTypesForFunctionCall(string function_name, AssetIDType[] arguments, DecompileContext context)
         {
             return AnnotateTypesForFunctionCall(function_name, arguments, context, null);
@@ -406,6 +414,18 @@ namespace UndertaleModLib.Decompiler
                     }
                 }
 
+                // Keep type
+                if (function != null) {
+                    // Copy the array to make sure we don't overwrite existing known types
+                    func_types = (AssetIDType[]) func_types.Clone();
+
+                    for (int i = 0; i < func_types.Length; i++)
+                    {
+                        if (func_types[i] == AssetIDType.Keep)
+                            func_types[i] = function.AssetType;
+                    }
+                }
+
                 if (overloaded)
                 {
                     // Copy the array to make sure we don't overwrite existing known types
@@ -425,8 +445,20 @@ namespace UndertaleModLib.Decompiler
                         // func_types[i] is correct, do not replace
                     }
                 }
-                for (int i = 0; i < arguments.Length && i < func_types.Length; i++)
-                    arguments[i] = func_types[i];
+                for (int i = 0; i < arguments.Length; i++) {
+                    if (i >= func_types.Length) {
+                        if (func_types.Length == 0) break;
+                        else if (func_types[func_types.Length - 1] == AssetIDType.Repeat) {
+                            arguments[i] = func_types[func_types.Length - 2];
+                        } else {
+                            break;
+                        }
+                    } else {
+                        arguments[i] = func_types[i];
+                        if (arguments[i] == AssetIDType.Repeat)
+                            arguments[i] = func_types[func_types.Length - 2];
+                    }
+                }
                 return true;
             }
             if (function_name == "script_execute")
@@ -483,6 +515,12 @@ namespace UndertaleModLib.Decompiler
                     return overrides[variable_name];
             }
 
+            
+            if (variable_name.StartsWith("spr_") || variable_name.EndsWith("spr") || variable_name.EndsWith("sprite"))
+            {
+                return AssetIDType.Sprite;
+            }
+            
 
             if (builtin_vars.ContainsKey(variable_name))
                 return builtin_vars[variable_name];
@@ -555,6 +593,7 @@ namespace UndertaleModLib.Decompiler
         // Properly initializes per-project/game
         public static void InitializeTypes(UndertaleData data)
         {
+            AssetTypeResolver.PTStates.Clear();
 
             ContextualAssetResolver.Initialize(data);
 
@@ -568,6 +607,9 @@ namespace UndertaleModLib.Decompiler
                 { "script_get_name", new[] { AssetIDType.Script } },
                 // script_execute handled separately
 
+                { "json_parse", new[] { AssetIDType.Other } },
+                { "json_stringify", new[] { AssetIDType.Other } },
+
                 { "instance_change", new[] { AssetIDType.GameObject, AssetIDType.Boolean } },
                 { "instance_copy", new[] { AssetIDType.Boolean } },
                 { "instance_create", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject } },
@@ -578,6 +620,7 @@ namespace UndertaleModLib.Decompiler
                 { "instance_nearest", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject } },
                 { "instance_number", new[] { AssetIDType.GameObject } },
                 { "instance_place", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject } },
+                { "instance_place_list", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject, AssetIDType.Other, AssetIDType.Boolean } },
                 { "instance_position", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject } },
                 { "instance_deactivate_all", new[] { AssetIDType.Boolean } },
                 { "application_surface_enable", new[] { AssetIDType.Boolean } },
@@ -848,6 +891,8 @@ namespace UndertaleModLib.Decompiler
 
                 { "layer_script_begin", new[] { AssetIDType.Other, AssetIDType.Script } },
                 { "layer_background_create", new[] { AssetIDType.Other, AssetIDType.Sprite } },
+                { "layer_background_change", new[] { AssetIDType.Other, AssetIDType.Sprite } },
+                { "layer_background_sprite", new[] { AssetIDType.Other, AssetIDType.Sprite } },
                 { "layer_background_blend", new[] { AssetIDType.Other, AssetIDType.Color } },
                 { "layer_background_visible", new[] { AssetIDType.Other, AssetIDType.Boolean } },
                 { "layer_sprite_change", new[] { AssetIDType.Other, AssetIDType.Sprite } },
@@ -893,6 +938,7 @@ namespace UndertaleModLib.Decompiler
                 { "collision_circle", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject, AssetIDType.Other, AssetIDType.Other } },
                 { "collision_ellipse", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject, AssetIDType.Other, AssetIDType.Other } },
                 { "collision_line", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject, AssetIDType.Boolean, AssetIDType.Boolean } },
+                { "collision_line_list", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject, AssetIDType.Boolean, AssetIDType.Boolean, AssetIDType.Other, AssetIDType.Boolean } },
                 { "collision_point", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject, AssetIDType.Other, AssetIDType.Other } },
                 { "collision_rectangle", new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject, AssetIDType.Other, AssetIDType.Other } },
 
@@ -1003,6 +1049,10 @@ namespace UndertaleModLib.Decompiler
 
                 { "steam_activate_overlay", new[] { AssetIDType.Enum_Steam_Overlay } },
 
+                // AssetIDType.Keep functions
+                { "choose", new[] { AssetIDType.Keep, AssetIDType.Repeat } },
+                { "@@NewGMLArray@@", new[] { AssetIDType.Keep, AssetIDType.Repeat } },
+
                 // Also big TODO: Implement Boolean type for all these functions
 
                 // Special internal functions
@@ -1048,6 +1098,313 @@ namespace UndertaleModLib.Decompiler
 
             // TODO: make proper file/manifest for all games to use, not just UT/DR, and also not these specific names
             string lowerName = data?.GeneralInfo?.DisplayName?.Content.ToLower(CultureInfo.InvariantCulture);
+            string lowerFileName = data?.GeneralInfo?.FileName?.Content.ToLower(CultureInfo.InvariantCulture);
+
+            // Pizza Tower (and things like Scoutdigo)
+            PTSpriteTypes = false;
+            if (
+                (lowerName != null && lowerName.StartsWith("pizza tower", StringComparison.InvariantCulture)) ||
+                (lowerFileName != null && lowerFileName == "pizzatower") ||
+                (lowerFileName != null && lowerFileName == "pizzatower_gm2") 
+            ) {
+                PTSpriteTypes = true;
+                builtin_vars.Add("state", AssetIDType.PT_State);
+                builtin_vars.Add("_state", AssetIDType.PT_State);
+                builtin_vars.Add("prevstate", AssetIDType.PT_State);
+                builtin_vars.Add("_prevstate", AssetIDType.PT_State);
+                builtin_vars.Add("substate", AssetIDType.PT_State);
+                builtin_vars.Add("arenastate", AssetIDType.PT_State);
+                builtin_vars.Add("player_state", AssetIDType.PT_State);
+                builtin_vars.Add("tauntstoredstate", AssetIDType.PT_State);
+                builtin_vars.Add("taunt_storedstate", AssetIDType.PT_State);
+                builtin_vars.Add("storedstate", AssetIDType.PT_State);
+                builtin_vars.Add("chosenstate", AssetIDType.PT_State);
+                builtin_vars.Add("superattackstate", AssetIDType.PT_State);
+                builtin_vars.Add("text_state", AssetIDType.PT_State);
+                builtin_vars.Add("ministate", AssetIDType.PT_State);
+                builtin_vars.Add("dropstate", AssetIDType.PT_State);
+                builtin_vars.Add("verticalstate", AssetIDType.PT_State);
+                builtin_vars.Add("walkstate", AssetIDType.PT_State);
+                builtin_vars.Add("hitstate", AssetIDType.PT_State);
+                builtin_vars.Add("toppin_state", AssetIDType.PT_State);
+                builtin_vars.Add("bossintrostate", AssetIDType.PT_State);
+                builtin_vars.Add("introstate", AssetIDType.PT_State);
+                builtin_vars.Add("fadeoutstate", AssetIDType.PT_State);
+                builtin_vars.Add("supergrabstate", AssetIDType.PT_State);
+                builtin_vars.Add("startstate", AssetIDType.PT_State);
+                builtin_vars.Add("atstate", AssetIDType.PT_State);
+                builtin_vars.Add("attack_pool", AssetIDType.PT_State);
+
+                builtin_vars.Add("leveltorestart", AssetIDType.Room);
+                builtin_vars.Add("targetRoom", AssetIDType.Room);
+                builtin_vars.Add("targetRoom2", AssetIDType.Room);
+                builtin_vars.Add("backtohubroom", AssetIDType.Room);
+                builtin_vars.Add("roomtorestart", AssetIDType.Room);
+                builtin_vars.Add("checkpointroom", AssetIDType.Room);
+                builtin_vars.Add("lastroom", AssetIDType.Room);
+                builtin_vars.Add("hub_array", AssetIDType.Room);
+                builtin_vars.Add("level_array", AssetIDType.Room);
+                builtin_vars.Add("_levelinfo", AssetIDType.Room);
+
+                builtin_vars.Add("objectlist", AssetIDType.GameObject);
+                builtin_vars.Add("object_arr", AssetIDType.GameObject);
+                builtin_vars.Add("objdark_arr", AssetIDType.GameObject);
+                builtin_vars.Add("content_arr", AssetIDType.GameObject);
+                builtin_vars.Add("spawnpool", AssetIDType.GameObject);
+                builtin_vars.Add("spawn_arr", AssetIDType.GameObject);
+                builtin_vars.Add("dark_arr", AssetIDType.GameObject);
+                builtin_vars.Add("flash_arr", AssetIDType.GameObject);
+                builtin_vars.Add("collision_list", AssetIDType.GameObject);
+
+                builtin_vars.Add("content", AssetIDType.GameObject);
+                builtin_vars.Add("player", AssetIDType.GameObject);
+                builtin_vars.Add("targetplayer", AssetIDType.GameObject);
+                builtin_vars.Add("target", AssetIDType.GameObject);
+
+                builtin_vars.Add("ispeppino", AssetIDType.Boolean);
+                builtin_vars.Add("isgustavo", AssetIDType.Boolean);
+                builtin_vars.Add("brick", AssetIDType.Boolean);
+                builtin_vars.Add("_found", AssetIDType.Boolean);
+                builtin_vars.Add("jumpAnim", AssetIDType.Boolean);
+                builtin_vars.Add("landAnim", AssetIDType.Boolean);
+                builtin_vars.Add("machslideAnim", AssetIDType.Boolean);
+                builtin_vars.Add("moveAnim", AssetIDType.Boolean);
+                builtin_vars.Add("stopAnim", AssetIDType.Boolean);
+                builtin_vars.Add("crouchslideAnim", AssetIDType.Boolean);
+                builtin_vars.Add("crouchAnim", AssetIDType.Boolean);
+                builtin_vars.Add("machhitAnim", AssetIDType.Boolean);
+                builtin_vars.Add("stompAnim", AssetIDType.Boolean);
+                builtin_vars.Add("dashAnim", AssetIDType.Boolean);
+
+                builtin_vars.Add("playerid", AssetIDType.GameObject);
+                builtin_vars.Add("_playerid", AssetIDType.GameObject);
+                builtin_vars.Add("player_id", AssetIDType.GameObject);
+                builtin_vars.Add("platformid", AssetIDType.GameObject);
+                builtin_vars.Add("objID", AssetIDType.GameObject);
+                builtin_vars.Add("objectID", AssetIDType.GameObject);
+                builtin_vars.Add("spawnenemyID", AssetIDType.GameObject);
+                builtin_vars.Add("ID", AssetIDType.GameObject);
+
+                builtin_vars.Add("baddiegrabbedID", AssetIDType.GameObject);
+                builtin_vars.Add("pizzashieldID", AssetIDType.GameObject);
+                builtin_vars.Add("angryeffectid", AssetIDType.GameObject);
+                builtin_vars.Add("pizzashieldid", AssetIDType.GameObject);
+                builtin_vars.Add("superchargedeffectid", AssetIDType.GameObject);
+
+                builtin_vars.Add("baddieID", AssetIDType.GameObject);
+                builtin_vars.Add("baddieid", AssetIDType.GameObject);
+                builtin_vars.Add("brickid", AssetIDType.GameObject);
+                builtin_vars.Add("attackerID", AssetIDType.GameObject);
+
+                builtin_vars.Add("object", AssetIDType.GameObject);
+                builtin_vars.Add("obj", AssetIDType.GameObject);
+                builtin_vars.Add("_obj", AssetIDType.GameObject);
+                builtin_vars.Add("closestObj", AssetIDType.GameObject);
+                builtin_vars.Add("solidObj", AssetIDType.GameObject);
+                builtin_vars.Add("bg_obj", AssetIDType.GameObject);
+
+                builtin_vars.Add("_obj_player", AssetIDType.GameObject);
+                builtin_vars.Add("obj_explosion", AssetIDType.GameObject);
+                builtin_vars.Add("my_obj_index", AssetIDType.GameObject);
+                builtin_vars.Add("inst", AssetIDType.GameObject);
+
+                builtin_vars.Add("chargeeffectid", AssetIDType.GameObject);
+                builtin_vars.Add("dashcloudid", AssetIDType.GameObject);
+                builtin_vars.Add("crazyruneffectid", AssetIDType.GameObject);
+                builtin_vars.Add("superslameffectid", AssetIDType.GameObject);
+                builtin_vars.Add("speedlineseffectid", AssetIDType.GameObject);
+
+                builtin_vars.Add("room_arr", AssetIDType.Room);
+                builtin_vars.Add("rm", AssetIDType.Room);
+                builtin_vars.Add("room_index", AssetIDType.Room);
+                builtin_vars.Add("levels", AssetIDType.Room);
+
+                builtin_vars.Add("bpal", AssetIDType.Sprite);
+                builtin_vars.Add("vstitle", AssetIDType.Sprite);
+                builtin_vars.Add("bg", AssetIDType.Sprite);
+                builtin_vars.Add("bg2", AssetIDType.Sprite);
+                builtin_vars.Add("bg3", AssetIDType.Sprite);
+                builtin_vars.Add("playersprshadow", AssetIDType.Sprite);
+                builtin_vars.Add("bosssprshadow", AssetIDType.Sprite);
+                builtin_vars.Add("portrait1_idle", AssetIDType.Sprite);
+                builtin_vars.Add("portrait1_hurt", AssetIDType.Sprite);
+                builtin_vars.Add("portrait2_idle", AssetIDType.Sprite);
+                builtin_vars.Add("portrait2_hurt", AssetIDType.Sprite);
+                builtin_vars.Add("boss_palette", AssetIDType.Sprite);
+                builtin_vars.Add("panicspr", AssetIDType.Sprite);
+                builtin_vars.Add("bossarr", AssetIDType.Sprite);
+                builtin_vars.Add("palettetexture", AssetIDType.Sprite);
+
+                builtin_vars.Add("storedspriteindex", AssetIDType.Sprite);
+                builtin_vars.Add("icon", AssetIDType.Sprite);
+
+                builtin_vars.Add("spridle", AssetIDType.Sprite);
+                builtin_vars.Add("sprgot", AssetIDType.Sprite);
+
+                builtin_vars.Add("color", AssetIDType.Color);
+                builtin_vars.Add("textcolor", AssetIDType.Color);
+                builtin_vars.Add("bc", AssetIDType.Color);
+                builtin_vars.Add("tc", AssetIDType.Color);
+                builtin_vars.Add("gameframe_blend", AssetIDType.Color);
+
+                builtin_vars.Add("gameframe_caption_icon", AssetIDType.Sprite);
+
+                builtin_funcs["instance_create_unique"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject };
+                builtin_funcs["instance_nearest_random"] =
+                    new[] { AssetIDType.GameObject, AssetIDType.Other };
+
+                builtin_funcs["draw_enemy"] =
+                    new[] { AssetIDType.Boolean, AssetIDType.Boolean, AssetIDType.Color };
+
+                builtin_funcs["create_afterimage"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other };
+                builtin_funcs["create_mach2effect"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Boolean };
+                builtin_funcs["create_heatattack_afterimage"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other };
+                builtin_funcs["create_firemouth_afterimage"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other };
+                builtin_funcs["create_blue_afterimage"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other };
+                builtin_funcs["create_red_afterimage"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other };
+                builtin_funcs["create_blur_afterimage"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other };
+
+                builtin_funcs["pal_swap_init_system"] =
+                    new[] { AssetIDType.Shader };
+                builtin_funcs["pal_swap_init_system_fix"] =
+                    new[] { AssetIDType.Shader };
+                builtin_funcs["pal_swap_set"] =
+                    new[] { AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other };
+                builtin_funcs["pattern_set"] =
+                    new[] { AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other };
+                
+                builtin_funcs["scr_sound"] =
+                    new[] { AssetIDType.Sound, AssetIDType.Sound, AssetIDType.Sound, AssetIDType.Sound };
+                builtin_funcs["scr_music"] =
+                    new[] { AssetIDType.Sound, AssetIDType.Sound, AssetIDType.Sound, AssetIDType.Sound };
+                builtin_funcs["scr_soundeffect"] =
+                    new[] { AssetIDType.Sound, AssetIDType.Sound, AssetIDType.Sound, AssetIDType.Sound };
+
+                builtin_funcs["declare_particle"] =
+                    new[] { AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other };
+                builtin_funcs["create_debris"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Boolean };
+                builtin_funcs["create_collect"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other };
+                
+                builtin_funcs["tv_do_expression"] =
+                    new[] { AssetIDType.Sprite };
+
+                builtin_funcs["scr_pauseicon_add"] =
+                    new[] { AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other };
+
+                builtin_funcs["scr_room_goto"] =
+                    new[] { AssetIDType.Room };
+
+                builtin_funcs["add_music"] =
+                    new[] { AssetIDType.Room, AssetIDType.Other, AssetIDType.Other, AssetIDType.Boolean, AssetIDType.Other };
+                builtin_funcs["hub_state"] =
+                    new[] { AssetIDType.Room, AssetIDType.Other, AssetIDType.Other };
+                
+                builtin_funcs["draw_background_tiled"] =
+                    new[] { AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other };
+                builtin_funcs["scr_draw_granny_texture"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other,
+                    AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Sprite, };
+                    
+                builtin_funcs["object_get_depth"] =
+                    new[] { AssetIDType.GameObject };
+
+                builtin_funcs["scr_bosscontroller_particle_anim"] =
+                    new[] { AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other,
+                    AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other };
+                builtin_funcs["scr_bosscontroller_particle_hp"] =
+                    new[] { AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other,
+                    AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Sprite };
+                builtin_funcs["scr_bosscontroller_draw_health"] =
+                    new[] { AssetIDType.Sprite,
+                    AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other,
+                    AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other,
+                    AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Sprite };
+                builtin_funcs["scr_boss_genericintro"] =
+                    new[] { AssetIDType.Sprite };
+                builtin_funcs["boss_update_pizzaheadKO"] =
+                    new[] { AssetIDType.Sprite, AssetIDType.Sprite };
+                builtin_funcs["scr_pizzaface_p3_do_player_attack"] =
+                    new[] { AssetIDType.GameObject };
+
+                builtin_funcs["vigilante_cancel_attack"] =
+                    new[] { AssetIDType.PT_State, AssetIDType.Repeat };
+
+                builtin_funcs["check_slope"] = new[] { AssetIDType.GameObject };
+                builtin_funcs["try_solid"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.GameObject, AssetIDType.Other };
+
+                builtin_funcs["add_rank_achievements"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other,
+                    AssetIDType.Other };
+                builtin_funcs["add_boss_achievements"] =
+                    new[] { AssetIDType.Other, AssetIDType.Room, AssetIDType.Sprite, AssetIDType.Other };
+
+                builtin_funcs["achievement_unlock"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other };
+                builtin_funcs["palette_unlock"] =
+                    new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite };
+
+                builtin_funcs["scr_monsterinvestigate"] =
+                    new[] { AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Sprite };
+
+                builtin_funcs["timedgate_add_objects"] =
+                    new[] { AssetIDType.GameObject, AssetIDType.Other };
+
+                builtin_funcs["randomize_animations"] =
+                    new[] { AssetIDType.Sprite, AssetIDType.Repeat };
+
+                if (data.Code is not null)
+                {
+                    UndertaleCode ptPlayerStep = data.Code.ByName("gml_Object_obj_player_Step_0");
+                    if (ptPlayerStep == null)
+                    {
+                        ptPlayerStep = data.Code.ByName("gml_Object_obj_player1_Step_0");
+                    }
+                    FindStateNames(ptPlayerStep, new[] {"scr_player_", "state_player_", "scr_playerN_"});
+                    FindStateNames(
+                        data.Code.ByName("gml_Object_obj_cheeseslime_Step_0"),
+                        new[] {"scr_enemy_", "scr_pizzagoblin_"}
+                    );
+                    FindStateNames(
+                        data.Code.ByName("gml_Object_obj_pepperman_Step_0"),
+                        new[] {"scr_boss_", "scr_pepperman_", "scr_enemy_"}
+                    );
+                    FindStateNames(
+                        data.Code.ByName("gml_Object_obj_vigilanteboss_Step_0"),
+                        new[] {"scr_vigilante_"}
+                    );
+                    FindStateNames(
+                        data.Code.ByName("gml_Object_obj_noiseboss_Step_0"),
+                        new[] {"scr_noise_"}
+                    );
+                    FindStateNames(
+                        data.Code.ByName("gml_Object_obj_fakepepboss_Step_0"),
+                        new[] {"scr_fakepepboss_", "scr_boss_"}
+                    );
+                    FindStateNames(
+                        data.Code.ByName("gml_Object_obj_pizzafaceboss_Step_0"),
+                        new[] {"scr_pizzaface_"}
+                    );
+                    FindStateNames(
+                        data.Code.ByName("gml_Object_obj_pizzafaceboss_p2_Step_0"),
+                        new[] {"scr_pizzaface_p2_", "scr_pizzaface_"}
+                    );
+                    FindStateNames(
+                        data.Code.ByName("gml_Object_obj_pizzafaceboss_p3_Step_0"),
+                        new[] {"scr_pizzaface_p3_"}
+                    );
+                }
+            }
 
             // Just Undertale
             if (lowerName != null && lowerName.StartsWith("undertale", StringComparison.InvariantCulture))
@@ -1375,14 +1732,12 @@ namespace UndertaleModLib.Decompiler
                 builtin_funcs["gml_Script_scr_draw_sprite_tiled_area"] = new[] { AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Color, AssetIDType.Boolean };
                 builtin_funcs["gml_Script_c_actorsetsprites"] = new[] { AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Sprite, AssetIDType.Sprite, AssetIDType.Sprite };
                 builtin_funcs["gml_Script_c_actortoobject"] = new[] { AssetIDType.GameObject };
-                builtin_funcs["gml_Script_scr_marker_animated"] = new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other };
                 builtin_funcs["scr_marker_animated"] = new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Other };
                 builtin_funcs["gml_Script_c_jump_sprite"] = new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Sprite };
                 builtin_funcs["gml_Script_scr_dark_marker_animated"] = new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Boolean };
                 builtin_funcs["scr_act_charsprite"] = new[] { AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other, AssetIDType.Boolean };
                 builtin_funcs["scr_draw_sprite_tiled_area"] = new[] { AssetIDType.Sprite, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Color, AssetIDType.Boolean };
-                builtin_funcs["c_actorsetsprites"] = new[] { AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Sprite, AssetIDType.Sprite, AssetIDType.Sprite };
-                builtin_funcs["c_actortoobject"] = new[] { AssetIDType.GameObject };
+                builtin_funcs["c_actorsetsprites"] = new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Boolean };
                 builtin_funcs["c_jump_sprite"] = new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Sprite };
                 builtin_funcs["scr_dark_marker_animated"] = new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite, AssetIDType.Boolean };
                 builtin_funcs["_background_set"] = new[] { AssetIDType.Other, AssetIDType.Other, AssetIDType.Sprite };
@@ -1501,6 +1856,7 @@ namespace UndertaleModLib.Decompiler
                 builtin_vars.Add("sourceobject", AssetIDType.GameObject);
                 //builtin_vars.Add("target", AssetIDType.GameObject);
                 builtin_vars.Add("writergod", AssetIDType.GameObject);
+                builtin_vars.Add("k", AssetIDType.GameObject);
                 AddOverrideFor("obj_carcutscene", "k", AssetIDType.GameObject);
                 AddOverrideFor("obj_carcutscene_ch1", "k", AssetIDType.GameObject);
                 builtin_vars.Add("childBullet", AssetIDType.GameObject);
@@ -2016,6 +2372,84 @@ namespace UndertaleModLib.Decompiler
                 // C TIER quality
                 builtin_vars.Add("sound1", AssetIDType.Sound);
                 builtin_vars.Add("sound2", AssetIDType.Sound);
+            }
+        }
+
+        // Detects PT state names
+        public static void FindStateNames(UndertaleCode code, string[] statePrefix)
+        {
+            if (code != null)
+            {
+                for (var i = 0; i < code.Instructions.Count; i++)
+                {
+                    UndertaleInstruction instr = code.Instructions[i];
+                    if (
+                        UndertaleInstruction.GetInstructionType(instr.Kind)
+                        != UndertaleInstruction.InstructionType.PushInstruction
+                        || !((instr.Value is int) || (instr.Value is short) || (instr.Value is long))
+                    ) continue;
+
+                    int stateID = Convert.ToInt32(instr.Value);
+                    if (PTStates.ContainsKey(stateID)) continue;
+
+                    UndertaleInstruction next = code.Instructions[i + 1];
+                    if (next == null) continue;
+                    if (
+                        UndertaleInstruction.GetInstructionType(next.Kind)
+                        != UndertaleInstruction.InstructionType.ComparisonInstruction
+                        || next.ComparisonKind != UndertaleInstruction.ComparisonType.EQ
+                    ) continue;
+                    UndertaleInstruction next2 = code.Instructions[i + 2];
+                    if (next2 == null) continue;
+                    if (
+                        next2.Kind != UndertaleInstruction.Opcode.Bt
+                    ) continue;
+
+                    UndertaleInstruction newInstr =
+                        code.GetInstructionFromAddress(next2.Address + (uint)next2.JumpOffset);
+
+                    if (newInstr == null) continue;
+
+                    for (
+                        var j = code.Instructions.IndexOf(newInstr);
+                        j < code.Instructions.Count &&
+                        UndertaleInstruction.GetInstructionType(code.Instructions[j].Kind) !=
+                            UndertaleInstruction.InstructionType.GotoInstruction;
+                        j++
+                    )
+                    {
+                        UndertaleInstruction thisInstr = code.Instructions[j];
+                        if (UndertaleInstruction.GetInstructionType(thisInstr.Kind)
+                            != UndertaleInstruction.InstructionType.CallInstruction) continue;
+                        string funcName = thisInstr.Function.Target.Name.Content;
+                        string stateName = null;
+                        foreach (string prefix in statePrefix) {
+                            if (funcName.StartsWith(prefix))
+                            {
+                                stateName = funcName[prefix.Length..];
+                                break;
+                            }
+                            else if (funcName.StartsWith("gml_Script_" + prefix))
+                            {
+                                stateName = funcName[("gml_Script_" + prefix).Length..];
+                                break;
+                            }
+                        }
+                        if (stateName == null) continue;
+                        // Hooray! We got the state!
+                        if (PTStates.ContainsKey(stateID)) break;
+
+                        string actualStateName = stateName;
+                        int dedupe = 1;
+                        while (PTStates.ContainsValue(actualStateName)) {
+                            dedupe++;
+                            actualStateName = stateName + dedupe.ToString();
+                        }
+
+                        PTStates.TryAdd(stateID, actualStateName);
+                        break;
+                    }
+                }
             }
         }
     }

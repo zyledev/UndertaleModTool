@@ -16,11 +16,15 @@ public static partial class Decompiler
         public DirectFunctionCall(string overridenName, UndertaleFunction function, UndertaleInstruction.DataType returnType, List<Expression> args) : base(returnType, args)
         {
             this.OverridenName = overridenName;
+            if (function == null)
+                throw new Exception("DirectFunctionCall: Function not found; overridden name: " + overridenName);
             this.Function = function;
         }
 
         public DirectFunctionCall(UndertaleFunction function, UndertaleInstruction.DataType returnType, List<Expression> args) : base(returnType, args)
         {
+            if (function == null)
+                throw new Exception("DirectFunctionCall: Function not found");
             this.Function = function;
         }
 
@@ -128,6 +132,8 @@ public static partial class Decompiler
 
         internal override AssetIDType DoTypePropagation(DecompileContext context, AssetIDType suggestedType)
         {
+            if (AssetType == AssetIDType.Other) AssetType = suggestedType;
+
             string funcName = OverridenName != string.Empty ? OverridenName : Function.Name.Content;
             var script_code = context.GlobalContext.Data?.Scripts.ByName(funcName)?.Code;
             if (script_code != null && !context.GlobalContext.ScriptArgsCache.ContainsKey(funcName))

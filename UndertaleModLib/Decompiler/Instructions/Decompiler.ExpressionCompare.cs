@@ -48,6 +48,10 @@ public static partial class Decompiler
         {
             // TODO: This should be probably able to go both ways...
             Argument2.DoTypePropagation(context, Argument1.DoTypePropagation(context, suggestedType));
+            if (Argument1 is ExpressionConstant)
+                Argument1.DoTypePropagation(context, Argument2.DoTypePropagation(context, suggestedType));
+            else
+                Argument2.DoTypePropagation(context, Argument1.DoTypePropagation(context, suggestedType));
 
             /*
                 if (Opcode != UndertaleInstruction.ComparisonType.EQ && Opcode != UndertaleInstruction.ComparisonType.NEQ)

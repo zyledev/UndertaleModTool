@@ -12,6 +12,7 @@ public class GlobalDecompileContext
     public UndertaleData Data;
 
     public bool EnableStringLabels;
+    public static bool PTAutoStates = true;
 
     public List<string> DecompilerWarnings = new List<string>();
 

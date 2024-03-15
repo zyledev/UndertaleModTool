@@ -96,6 +96,9 @@ public static partial class Decompiler
 
                 if (Condition == null)
                 {
+                    if (Block.Statements.Count() == 0) // sequence could be empty if possiblee
+                        return this;
+
                     if (Block.Statements.Last() is IfHLStatement)
                     {
                         IfHLStatement ifStatement = Block.Statements.Last() as IfHLStatement;

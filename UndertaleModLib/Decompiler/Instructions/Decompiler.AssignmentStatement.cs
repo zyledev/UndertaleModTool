@@ -13,6 +13,8 @@ public static partial class Decompiler
 
         public bool HasVarKeyword;
 
+        public bool IsScriptAssign;
+
         private bool _isStructDefinition, _checkedForDefinition;
         public bool IsStructDefinition
         {
@@ -65,20 +67,25 @@ public static partial class Decompiler
                 {
                     var locals = data.CodeLocals.For(context.TargetCode);
                     // Stop decompiler from erroring on missing CodeLocals
-                    if (locals != null && locals.HasLocal(varName) && context.LocalVarDefines.Add(varName))
+                    if (locals != null && locals.HasLocal(varName) && context.LocalVarDefinesUsed.Add(varName)) {
                         HasVarKeyword = true;
+                        context.LocalVarDefines.Add(varName);
+                    }
                 }
             }
 
             // Someone enlighten me on structs, I'm steering clear for now.
             // And find the "right" way to do this.
-            if (Value is FunctionDefinition functionVal && functionVal.Subtype != FunctionDefinition.FunctionType.Struct)
+            if (Value is FunctionDefinition functionVal && IsScriptAssign && functionVal.Subtype != FunctionDefinition.FunctionType.Struct)
             {
                 functionVal.IsStatement = true;
                 return functionVal.ToString(context);
             }
 
-            string varPrefix = (HasVarKeyword ? "var " : "");
+            string prefix = (
+                Destination.Var.InstanceType == UndertaleInstruction.InstanceType.Static ? "static " :
+                ((HasVarKeyword && !context.DecompilingStruct) ? "var " : "")
+            );
 
             // Check for possible ++, --, or operation equal (for single vars)
             if (Value is ExpressionTwo two && (two.Argument1 is ExpressionVar) &&
@@ -113,11 +120,11 @@ public static partial class Decompiler
                     if (checkEqual(Destination, v1) && two.Opcode != UndertaleInstruction.Opcode.Shl && two.Opcode != UndertaleInstruction.Opcode.Shr && two.Opcode != UndertaleInstruction.Opcode.Rem)
                     {
                         if (!(context.GlobalContext.Data?.GeneralInfo?.BytecodeVersion > 14 && v1.Opcode != UndertaleInstruction.Opcode.Push && Destination.Var.InstanceType != UndertaleInstruction.InstanceType.Self))
-                            return String.Format("{0}{1} {2}= {3}", varPrefix, varName, Expression.OperationToPrintableString(two.Opcode), two.Argument2.ToString(context));
-                    }
+
+                                return String.Format("{0}{1} {2}= {3}", prefix, varName, Expression.OperationToPrintableString(two.Opcode), two.Argument2.ToString(context));                    }
                 }
             }
-            return String.Format("{0}{1}{2} {3}", varPrefix, varName, context.DecompilingStruct ? ":" : " =", Value.ToString(context));
+            return String.Format("{0}{1}{2} {3}", prefix, varName, context.DecompilingStruct ? ":" : " =", Value.ToString(context));
         }
 
         public override Statement CleanStatement(DecompileContext context, BlockHLStatement block)

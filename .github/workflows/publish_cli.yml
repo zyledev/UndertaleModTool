@@ -40,8 +40,9 @@ jobs:
       run: |
         cp ./README.md ./CLI-${{ matrix.os }}/
         cp ./LICENSE.txt ./CLI-${{ matrix.os }}/
+        cp ./.disable_gb1click ./CLI-${{ matrix.os }}/
     - name: Upload ${{ matrix.os }} CLI
       uses: actions/upload-artifact@v4
       with:
-        name: CLI-${{ matrix.os }}-isBundled-${{ matrix.bundled }}
-        path: CLI-${{ matrix.os }}
+        name: CLI-UTMTCE${{ matrix.os }}-isBundled-${{ matrix.bundled }}
+        path: CLI-UTMTCE${{ matrix.os }}

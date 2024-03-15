@@ -14,6 +14,10 @@ public static partial class Decompiler
 
         public IndirectFunctionCall(Expression func_this, Expression func, UndertaleInstruction.DataType returnType, List<Expression> args) : base(returnType, args)
         {
+            if (func_this == null)
+                throw new Exception("IndirectFunctionCall: FunctionThis not found");
+            if (func == null)
+                throw new Exception("IndirectFunctionCall: Function not found");
             this.FunctionThis = func_this;
             this.Function = func;
         }
@@ -31,7 +35,12 @@ public static partial class Decompiler
             if (Function is FunctionDefinition)
                 return String.Format("{0}({1})", Function.ToString(context), argumentString.ToString());
 
-            return String.Format("{0}.{1}({2})", FunctionThis.ToString(context), Function.ToString(context), argumentString.ToString());
+            // self.variableFunction()
+            if (FunctionThis is ExpressionConstant && (string)((FunctionThis as ExpressionConstant)?.Value) == "self")
+                return String.Format("{0}.{1}({2})", FunctionThis.ToString(context), Function.ToString(context), argumentString.ToString());
+
+            // variable.variableFunction()
+            return String.Format("{0}({1})", Function.ToString(context), argumentString.ToString());
         }
 
         public override Statement CleanStatement(DecompileContext context, BlockHLStatement block)

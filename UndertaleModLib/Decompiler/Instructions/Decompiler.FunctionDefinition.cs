@@ -120,6 +120,14 @@ public static partial class Decompiler
                         sb.Append("constructor ");
                     sb.Append("//");
                     sb.Append(Function.Name.Content);
+
+                    // make sure that if you declare a local variable in one function
+                    // and again in another, both functions have the var keyword
+                    // instead of just the first
+                    // this doesn't account for variables declared outside
+                    // functions, but that doesn't happen that much in places with
+                    // function definitions
+                    context.LocalVarDefinesUsed.Clear();
                 }
 
                 var statements = context.Statements[FunctionBodyEntryBlock.Address.Value];
@@ -166,16 +174,17 @@ public static partial class Decompiler
                         }
                         sb.Append("\n");
                     }
-                    context.DecompilingStruct = oldDecompilingStruct;
                     context.ArgumentReplacements = oldReplacements;
                     context.IndentationLevel--;
                     sb.Append(context.Indentation);
                     sb.Append("}");
-                    if(!oldDecompilingStruct)
+                    if(!oldDecompilingStruct) {
                         sb.Append("\n");
+                    }
                 }
                 else
                     sb.Append("{}");
+                context.DecompilingStruct = oldDecompilingStruct;
             }
             else
             {

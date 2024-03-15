@@ -21,8 +21,10 @@ public static partial class Decompiler
         public override string ToString(DecompileContext context)
         {
             //TODO: why is there a GMS2Check for this? var exists in gms1.4 as well
-            if (context.GlobalContext.Data?.IsGameMaker2() ?? false && !HasVarKeyword && context.LocalVarDefines.Add(Var.Var.Name))
+            if (context.GlobalContext.Data?.IsGameMaker2() ?? false && !HasVarKeyword && context.LocalVarDefinesUsed.Add(Var.Var.Name)) {
                 HasVarKeyword = true;
+                context.LocalVarDefines.Add(Var.Var.Name);
+            }
 
             return String.Format("{0}{1} = {2}", (HasVarKeyword ? "var " : ""), Var.Var.Name, Value.ToString(context));
         }
@@ -48,7 +50,10 @@ public static partial class Decompiler
         {
             if (Var.Var.AssetType == AssetIDType.Other)
                 Var.Var.AssetType = suggestedType;
-            return Value.DoTypePropagation(context, Var.Var.AssetType);
+            AssetIDType type = Value.DoTypePropagation(context, Var.Var.AssetType);
+            if (Var.Var.AssetType == AssetIDType.Other)
+                Var.Var.AssetType = type;
+            return type;
         }
     }
 }

@@ -73,6 +73,15 @@ public static partial class Decompiler
 
         public override string ToString(DecompileContext context)
         {
+            if (
+                GlobalDecompileContext.PTAutoStates &&
+                AssetType == AssetIDType.PT_State &&
+                (Value is int || Value is short || Value is long) &&
+                AssetTypeResolver.PTStates.ContainsKey(Convert.ToInt32(Value))
+            ) {
+                return "states." + AssetTypeResolver.PTStates.GetValueOrDefault(Convert.ToInt32(Value));
+            }
+
             if (Value is float f) // More accurate, larger range, double to string.
                 return DoubleToString.StringOf(f);
 
@@ -99,7 +108,10 @@ public static partial class Decompiler
             if (AssetType == AssetIDType.GameObject && !(Value is Int64)) // When the value is Int64, an example value is 343434343434. It is unknown what it represents, but it's not an InstanceType.
             {
                 int? val = ConvertToInt(Value);
-                if (val != null && val < 0 && val >= -16)
+                // Instance types past -5 are builtin, local, stacktop, arg and static.
+                // None of them are constants in GML.
+                // In GMS2.3, `self` and `other` are function calls instead of being -1 and -2.
+                if (val != null && val < (DecompileContext.GMS2_3 ? -2 : 0) && val >= -5)
                     return ((UndertaleInstruction.InstanceType)Value).ToString().ToLower(CultureInfo.InvariantCulture);
             }
             else switch (AssetType) // Need to put else because otherwise it gets terribly unoptimized with GameObject type

@@ -494,6 +494,8 @@ namespace UndertaleModLib.Compiler
                     "default" => new Token(Token.TokenKind.KeywordDefault, cr.GetPositionInfo(index)),
                     "struct" => new Token(Token.TokenKind.KeywordStruct, cr.GetPositionInfo(index)),
                     "function" when CompileContext.GMS2_3 => new Token(Token.TokenKind.KeywordFunction, cr.GetPositionInfo(index)),
+                    "constructor" when CompileContext.GMS2_3 => new Token(Token.TokenKind.KeywordConstructor, cr.GetPositionInfo(index)),
+                    "new" when CompileContext.GMS2_3 => new Token(Token.TokenKind.KeywordNew, cr.GetPositionInfo(index)),
                     "for" => new Token(Token.TokenKind.KeywordFor, cr.GetPositionInfo(index)),
                     "case" => new Token(Token.TokenKind.KeywordCase, cr.GetPositionInfo(index)),
                     "switch" => new Token(Token.TokenKind.KeywordSwitch, cr.GetPositionInfo(index)),
@@ -504,8 +506,12 @@ namespace UndertaleModLib.Compiler
                     "repeat" => new Token(Token.TokenKind.KeywordRepeat, cr.GetPositionInfo(index)),
                     "exit" => new Token(Token.TokenKind.KeywordExit, cr.GetPositionInfo(index)),
                     "then" => new Token(Token.TokenKind.KeywordThen, cr.GetPositionInfo(index)),
+                    "static" => new Token(Token.TokenKind.KeywordStatic, cr.GetPositionInfo(index)),
                     "mod" => new Token(Token.TokenKind.Mod, cr.GetPositionInfo(index)),
                     "div" => new Token(Token.TokenKind.Div, cr.GetPositionInfo(index)),
+                    // In GMS2.3, these keywords are special function calls instead of constants
+                    "self" when CompileContext.GMS2_3 => new Token(Token.TokenKind.KeywordSelf, cr.GetPositionInfo(index)),
+                    "other" when CompileContext.GMS2_3 => new Token(Token.TokenKind.KeywordOther, cr.GetPositionInfo(index)),
                     _ => new Token(Token.TokenKind.Identifier, identifierText, cr.GetPositionInfo(index)),
                 };
             }
@@ -813,6 +819,10 @@ namespace UndertaleModLib.Compiler
                     KeywordContinue,
                     KeywordStruct, // Apparently this exists
                     KeywordFunction,
+                    KeywordConstructor,
+                    KeywordNew,
+                    KeywordSelf,
+                    KeywordOther,
                     OpenBlock, // {
                     CloseBlock, // }
                     OpenArray, // [
@@ -868,7 +878,9 @@ namespace UndertaleModLib.Compiler
                     ProcFunction,
                     ProcConstant,
 
-                    Error
+                    Error,
+
+                    KeywordStatic
                 }
 
                 public Token()

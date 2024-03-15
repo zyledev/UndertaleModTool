@@ -404,7 +404,13 @@ an issue on GitHub.");
 
                 if (!dir.Exists)
                 {
+#if DEBUG
+                // Error is annoying during development
+                Console.WriteLine("Source directory does not exist or could not be found: " + sourceDirName);
+                return;
+#else
                     throw new DirectoryNotFoundException("Source directory does not exist or could not be found: " + sourceDirName);
+#endif
                 }
 
                 DirectoryInfo[] dirs = dir.GetDirectories();

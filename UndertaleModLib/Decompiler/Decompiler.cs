@@ -67,6 +67,28 @@ namespace UndertaleModLib.Decompiler
             return GetTypeSize(e.Type);
         }
 
+        internal static bool InstructionReturns(UndertaleInstruction instr)
+        {
+            return instr.Kind == UndertaleInstruction.Opcode.Exit || instr.Kind == UndertaleInstruction.Opcode.Ret;
+        }
+        // Returns whether a block most likely leads into a return statement or not
+        // (mainly for popenv purposes)
+        internal static bool BlockReturns(Block block)
+        {
+            if (block.Instructions.Count <= 0) return false;
+            if (InstructionReturns(block.Instructions.Last())) return true;
+            if (block.nextBlockTrue is null && block.nextBlockTrue is null) return false;
+            Block nextBlock = block.nextBlockTrue;
+            Block nextBlockFalse = block.nextBlockFalse;
+            return (nextBlock is not null && (
+                nextBlock.Instructions.Count > 0 &&
+                InstructionReturns(nextBlock.Instructions.Last())
+            )) || (nextBlockFalse is not null && (
+                nextBlockFalse.Instructions.Count > 0 &&
+                InstructionReturns(nextBlockFalse.Instructions.Last())
+            ));
+        }
+
         // The core function to decompile a specific block.
         internal static void DecompileFromBlock(DecompileContext context, Dictionary<uint, Block> blocks, Block block, List<TempVarReference> tempvars, Stack<Tuple<Block, List<TempVarReference>>> workQueue)
         {
@@ -75,7 +97,10 @@ namespace UndertaleModLib.Decompiler
                 // Reroute tempvars to alias them to our ones
                 if (block.TempVarsOnEntry.Count != tempvars.Count)
                 {
-                    throw new Exception("Reentered block with different amount of vars on stack (Entry: " + block.TempVarsOnEntry.Count + ", Actual Count: " + tempvars.Count + ")");
+                    for (int i = 0; i < block.TempVarsOnEntry.Count; i++)
+                    {
+                        block.TempVarsOnEntry[i].Var = tempvars[i].Var;
+                    }
                 }
                 else
                 {
@@ -117,13 +142,14 @@ namespace UndertaleModLib.Decompiler
                         if (instr.ComparisonKind != 0)
                         {
                             // This is the GMS 2.3+ stack move / swap instruction
-                            if (instr.Type1 == UndertaleInstruction.DataType.Variable)
+                            bool isVariable = instr.Type1 == UndertaleInstruction.DataType.Variable;
+                            /*if (instr.Type1 == UndertaleInstruction.DataType.Variable)
                             {
                                 // This variant seems to do literally nothing...?
                                 break;
-                            }
+                            }*/
 
-                            int bytesToTake = instr.Extra * 4;
+                            int bytesToTake = instr.Extra * (isVariable ? 16 : 4);
                             Stack<Expression> taken = new Stack<Expression>();
                             while (bytesToTake > 0)
                             {
@@ -137,7 +163,7 @@ namespace UndertaleModLib.Decompiler
                             int b2 = (byte)instr.ComparisonKind & 0x7F;
                             if ((b2 & 0b111) != 0)
                                 throw new InvalidOperationException("Don't know what to do with this");
-                            int bytesToMove = (b2 >> 3) * 4;
+                            int bytesToMove = (b2 >> 3) * (isVariable ? 16 : 4);
                             Stack<Expression> moved = new Stack<Expression>();
                             while (bytesToMove > 0)
                             {
@@ -295,11 +321,12 @@ namespace UndertaleModLib.Decompiler
                         break;
 
                     case UndertaleInstruction.Opcode.PopEnv:
-                        if (!instr.JumpOffsetPopenvExitMagic)
+                        if (!instr.JumpOffsetPopenvExitMagic || !BlockReturns(block))
                             statements.Add(new PopEnvStatement());
                         // For JumpOffsetPopenvExitMagic:
                         //  This is just an instruction to make sure the pushenv/popenv stack is cleared on early function return
-                        //  Works kinda like 'break', but doesn't have a high-level representation as it's immediately followed by a 'return'
+                        //  Works kinda like 'break', but doesn't have a high-level representation as it's immediately followed by a 'return' in most cases
+                        // But, when it's not followed by a `return`, it *is* a `break`
                         end = true;
                         break;
 
@@ -396,7 +423,11 @@ namespace UndertaleModLib.Decompiler
                             }
                             else
                                 Debug.Fail("Pop value is null.");
-                            statements.Add(new AssignmentStatement(target, val));
+                            AssignmentStatement result = new AssignmentStatement(target, val);
+                            if (target.VarType == UndertaleInstruction.VariableType.StackTop) {
+                                result.IsScriptAssign = true;
+                            }
+                            statements.Add(result);
                         }
                         break;
 
@@ -491,6 +522,12 @@ namespace UndertaleModLib.Decompiler
 
                     case UndertaleInstruction.Opcode.Call:
                         {
+                            if (instr.Function.Target is null)
+                            {
+                                Debug.WriteLine(instr.Function.ToString());
+                                stack.Push(new ExpressionConstant(UndertaleInstruction.DataType.Undefined, null, false));
+                                break;
+                            }
                             List<Expression> args = new List<Expression>();
                             for (int j = 0; j < instr.ArgumentsCount; j++)
                                 args.Add(stack.Pop());
@@ -510,7 +547,10 @@ namespace UndertaleModLib.Decompiler
                                 if (arg2 is ExpressionConstant argCode && argCode.Type == UndertaleInstruction.DataType.Int32 &&
                                     argCode.Value is UndertaleInstruction.Reference<UndertaleFunction> argCodeFunc)
                                 {
-                                    UndertaleCode functionBody = context.GlobalContext.Data.Code.First(x => x.Name.Content == argCodeFunc.Target.Name.Content);
+                                    UndertaleCode functionBody = context.GlobalContext.Data.Code.First(
+                                        x => ((x.Name.Content == argCodeFunc.Target.Name.Content)
+                                            || (x.Name.Content == "gml_Script_" + (argCodeFunc.Target.Name.Content)))
+                                    );
 
                                     FunctionDefinition.FunctionType type = FunctionDefinition.FunctionType.Function;
                                     bool processChildEntry;
@@ -685,6 +725,11 @@ namespace UndertaleModLib.Decompiler
                                         owner = statement.ToString(context);
                                     statements.Add(new CommentStatement("setowner: " + (owner ?? "<null>")));
                                     */
+                                    break;
+                                case -6: // isstaticok, returns a boolean used essentially as an if statement for static variables. stubbed for now
+                                    stack.Push(new ExpressionConstant(UndertaleInstruction.DataType.Int32, (int)1, false));
+                                    break;
+                                case -7: // setstatic
                                     break;
                                 case -10: // GMS2.3+, chknullish
 
@@ -1080,7 +1125,7 @@ namespace UndertaleModLib.Decompiler
         // Process the base decompilation: clean up, make it readable, identify structures
         private static BlockHLStatement HLDecompileBlocks(DecompileContext context, ref Block block, Dictionary<uint, Block> blocks, Dictionary<Block, List<Block>> loops, Dictionary<Block, List<Block>> reverseDominators, List<Block> alreadyVisited, Block currentLoop = null, Block stopAt = null, Block breakTo = null, bool decompileTheLoop = false, uint depth = 0)
         {
-            if (depth > 200)
+            if (depth > 600)
                 throw new Exception("Excessive recursion while processing blocks.");
 
             BlockHLStatement output = new BlockHLStatement();
@@ -1129,7 +1174,8 @@ namespace UndertaleModLib.Decompiler
                 }
 
                 if (output.Statements.Count >= 1 && output.Statements[output.Statements.Count - 1] is TempVarAssignmentStatement &&
-                    block.Instructions.Count >= 1 && block.Instructions[block.Instructions.Count - 1].Kind == UndertaleInstruction.Opcode.Bt &&
+                    block.Instructions.Count >= 4 && block.Instructions[block.Instructions.Count - 1].Kind == UndertaleInstruction.Opcode.Bt &&
+                    block.Instructions.Count >= 4 && block.Instructions[block.Instructions.Count - 4].Kind == UndertaleInstruction.Opcode.Dup &&
                     block.conditionalExit && block.ConditionStatement is ExpressionCompare &&
                     (block.ConditionStatement as ExpressionCompare).Opcode == UndertaleInstruction.ComparisonType.EQ)
                 {
@@ -1194,14 +1240,14 @@ namespace UndertaleModLib.Decompiler
                         var x = caseEntries.ElementAt(i);
                         Block temp = x.Key;
 
-                        Block switchEnd = DetermineSwitchEnd(temp, caseEntries.Count > (i + 1) ? caseEntries.ElementAt(i + 1).Key : null, meetPoint);
+                        Block switchEnd = context.GlobalContext.Data.GeneralInfo.BytecodeVersion == 17 ? meetPoint : DetermineSwitchEnd(temp, caseEntries.Count > (i + 1) ? caseEntries.ElementAt(i + 1).Key : null, meetPoint);
 
                         HLSwitchCaseStatement result = new HLSwitchCaseStatement(x.Value, HLDecompileBlocks(context, ref temp, blocks, loops, reverseDominators, alreadyVisited, currentLoop, switchEnd, switchEnd, false, depth + 1));
                         cases.Add(result);
                         if (result.CaseExpressions.Contains(null))
                             defaultCase = result;
 
-                        DebugUtil.Assert(temp == switchEnd, "temp != switchEnd");
+                        // DebugUtil.Assert(temp == switchEnd, "temp != switchEnd");
                     }
 
 
@@ -1234,6 +1280,15 @@ namespace UndertaleModLib.Decompiler
                     }
 
                     output.Statements.Add(new HLSwitchStatement(switchExpression, cases));
+
+                    AssetIDType tempVarType = switchTempVar.AssetType;
+                    foreach (HLSwitchCaseStatement _case in cases) {
+                        foreach (Expression expr in _case.CaseExpressions) {
+                            if (expr != null) {
+                                expr.DoTypePropagation(context, tempVarType);
+                            }
+                        }
+                    }
                     continue;
                 }
 
@@ -1283,10 +1338,30 @@ namespace UndertaleModLib.Decompiler
                     {
                         var last = block.Instructions.Last();
                         var lastKind = last.Kind;
+                        // the loop hack!!
+                        // (this makes pizza tower obj_player step not throw an exception)
+                        // (it still decompiles incorrectly but it does decompile)
+                        if (
+                            lastKind == UndertaleInstruction.Opcode.B
+                            && block.nextBlockFalse == block.nextBlockTrue
+                            && block.nextBlockTrue.Address < block.Address
+                            // fix some continue statements being erroneously removed
+                            // (`gameframe` script)
+                            && (
+                                block.Instructions.Count < 2 ||
+                                block.Instructions[block.Instructions.Count - 2].Kind != UndertaleInstruction.Opcode.Popz
+                            )
+                        )
+                        {
+                            break;
+                        }
                         if (lastKind == UndertaleInstruction.Opcode.PopEnv && last.JumpOffsetPopenvExitMagic)
                         {
                             block = block.nextBlockTrue;
                             popenvDrop = true;
+                            // Add a break statement if there's no return
+                            if (!BlockReturns(block))
+                                output.Statements.Add(new BreakHLStatement());
                         } else
                             block = ((lastKind != UndertaleInstruction.Opcode.Ret && lastKind != UndertaleInstruction.Opcode.Exit)
                                 || (block.nextBlockTrue != null && block.nextBlockTrue.nextBlockFalse == null)) ? block.nextBlockTrue : stopAt;
@@ -1439,7 +1514,12 @@ namespace UndertaleModLib.Decompiler
             context.Statements = new Dictionary<uint, List<Statement>>();
             context.Statements.Add(0, HLDecompile(context, blocks, blocks[0], blocks[code.Length / 4]));
             foreach (UndertaleCode duplicate in code.ChildEntries)
-                context.Statements.Add(duplicate.Offset / 4, HLDecompile(context, blocks, blocks[duplicate.Offset / 4], blocks[code.Length / 4]));
+            {
+               if (!context.Statements.ContainsKey(duplicate.Offset / 4)) // duplicated shit fix
+               {
+                   context.Statements.Add(duplicate.Offset / 4, HLDecompile(context, blocks, blocks[duplicate.Offset / 4], blocks[code.Length / 4]));
+               }
+            }
 
             // Write code.
             context.IndentationLevel = 0;
@@ -1476,11 +1556,17 @@ namespace UndertaleModLib.Decompiler
             byte elapsedSec = 1;
             Task mainTask = Task.Run(() =>
             {
+                Dictionary<string, UndertaleFunction> funcDict = new();
                 HashSet<string> codeNames = new(data.Code.Select(c => c.Name?.Content));
                 foreach (var func in data.Functions)
                 {
                     if (codeNames.Contains(func.Name.Content))
                         func.Autogenerated = true;
+                    if (funcDict.ContainsKey(func.Name.Content))
+                    {
+                        funcDict.Remove(func.Name.Content);
+                    }
+                    funcDict.Add(func.Name.Content, func);
                 }
                 data.KnownSubFunctions = new Dictionary<string, UndertaleFunction>();
                 GlobalDecompileContext globalDecompileContext = new GlobalDecompileContext(data, false);

@@ -102,6 +102,7 @@ public class DecompileContext
 
     #region Local var management
     public HashSet<string> LocalVarDefines = new HashSet<string>();
+    public HashSet<string> LocalVarDefinesUsed = new HashSet<string>();
     #endregion
 
     #region GMS 2.3+ Function management

@@ -10,6 +10,7 @@ public static partial class Decompiler
     {
         internal UndertaleInstruction.DataType ReturnType;
         internal List<Expression> Arguments;
+        internal AssetIDType AssetType = AssetIDType.Other;
 
         protected FunctionCall(UndertaleInstruction.DataType returnType, List<Expression> args)
         {
